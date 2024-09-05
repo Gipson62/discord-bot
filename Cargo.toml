@@ -1,0 +1,10 @@
+[package]
+name = "atlas-discord-bot"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+poise = "0.6.1"
+shuttle-runtime = "0.47.0"
+shuttle-serenity = "0.47.0"
+tokio = "1.40.0"
