@@ -1,11 +1,10 @@
+use std::sync::Mutex;
+
 use anyhow::Context as _;
-use poise::{serenity_prelude::{
-    ClientBuilder, CommandOptionType, CreateCommand, CreateCommandOption, EventHandler,
-    GatewayIntents, Guild, GuildId, Ready,
-}, SlashArgument};
+use poise::serenity_prelude::{ChannelId, ClientBuilder, EventHandler, GatewayIntents, GuildId, Ready};
+use rusqlite::Connection;
 use shuttle_runtime::{async_trait, SecretStore};
 use shuttle_serenity::ShuttleSerenity;
-use sqlite::{open, ConnectionThreadSafe};
 
 struct Data {} // User data, which is stored and accessible in all command invocations
 type Error = Box<dyn std::error::Error + Send + Sync>;
@@ -18,64 +17,16 @@ async fn hello(ctx: Context<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-#[poise::command(slash_command)]
-async fn test(ctx: Context<'_>, ) -> Result<(), Error> {
-    Ok(())
-}
-
 struct Bot {
-    database: ConnectionThreadSafe,
+    database: Mutex<Connection>,
     guild_id: GuildId,
+    log_id: ChannelId
 }
 
 #[async_trait]
 impl EventHandler for Bot {
-    async fn ready(&self, ctx: poise::serenity_prelude::Context, ready: Ready) {
-        let _ = self.guild_id
-            .set_commands(
-                &ctx.http,
-                vec![CreateCommand::new("todo")
-                    .description("Add, list and complete todos")
-                    .add_option(
-                        CreateCommandOption::new(
-                            CommandOptionType::SubCommand,
-                            "add",
-                            "Add a new todo",
-                        )
-                        .add_sub_option(
-                            CreateCommandOption::new(
-                                CommandOptionType::String,
-                                "note",
-                                "The todo note to add",
-                            )
-                            .min_length(2)
-                            .max_length(100)
-                            .required(true),
-                        ),
-                    )
-                    .add_option(
-                        CreateCommandOption::new(
-                            CommandOptionType::SubCommand,
-                            "complete",
-                            "The todo to complete",
-                        )
-                        .add_sub_option(
-                            CreateCommandOption::new(
-                                CommandOptionType::Integer,
-                                "index",
-                                "The index of the todo to complete",
-                            )
-                            .min_int_value(1)
-                            .required(true),
-                        ),
-                    )
-                    .add_option(CreateCommandOption::new(
-                        CommandOptionType::SubCommand,
-                        "list",
-                        "List your todos",
-                    ))],
-            )
-            .await;
+    async fn ready(&self, ctx: poise::serenity_prelude::Context, _ready: Ready) {
+        let _ = self.log_id.say(&ctx.http, format!("Bot is up")).await;
     }
 }
 
@@ -100,12 +51,20 @@ async fn main(#[shuttle_runtime::Secrets] secret_store: SecretStore) -> ShuttleS
         .build();
 
     let bot = Bot {
-        database: sqlite::Connection::open_thread_safe("../database.sqlite")
-            .expect("should be the correct path but not sure"),
+        database: Mutex::new(
+            rusqlite::Connection::open("../database.db").expect("Should be a db there"),
+        ),
         guild_id: GuildId::new(
             secret_store
                 .get("REDGEAR_GUILD_ID")
                 .context("'REDGEAR_GUILD_ID' was not found")?
+                .parse::<u64>()
+                .expect("Should be parsed correctly"),
+        ),
+        log_id: ChannelId::new(
+            secret_store
+                .get("REDGEAR_LOG_ID")
+                .context("'REDGEAR_LOG_ID' was not found")?
                 .parse::<u64>()
                 .expect("Should be parsed correctly"),
         ),
